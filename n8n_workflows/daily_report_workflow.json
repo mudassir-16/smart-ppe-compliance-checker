@@ -1,0 +1,268 @@
+{
+  "name": "Daily PPE Compliance Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Daily Schedule (8 AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/dashboard/stats?days=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-daily-stats",
+      "name": "Get Daily Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/compliance/records?limit=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-recent-records",
+      "name": "Get Recent Records",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process daily stats and create report\nconst stats = $input.first().json;\nconst records = $input.last().json;\n\n// Calculate compliance rate\nconst complianceRate = stats.compliance_rate || 0;\nconst totalChecks = stats.total_checks || 0;\nconst compliantChecks = stats.compliant_checks || 0;\nconst nonCompliantChecks = stats.non_compliant_checks || 0;\n\n// Get department breakdown\nconst departmentStats = stats.department_stats || {};\n\n// Get recent violations\nconst recentViolations = stats.recent_violations || [];\n\n// Create report data\nconst reportData = {\n  date: new Date().toISOString().split('T')[0],\n  summary: {\n    total_checks: totalChecks,\n    compliant_checks: compliantChecks,\n    non_compliant_checks: nonCompliantChecks,\n    compliance_rate: complianceRate\n  },\n  departments: departmentStats,\n  violations: recentViolations.slice(0, 10), // Top 10 violations\n  recommendations: []\n};\n\n// Add recommendations based on data\nif (complianceRate < 80) {\n  reportData.recommendations.push(\"Overall compliance rate is below 80%. Consider additional safety training.\");\n}\n\nif (nonCompliantChecks > 10) {\n  reportData.recommendations.push(\"High number of non-compliance incidents. Review safety protocols.\");\n}\n\n// Check department performance\nObject.entries(departmentStats).forEach(([dept, data]) => {\n  if (data.rate < 70) {\n    reportData.recommendations.push(`${dept} department has low compliance rate (${data.rate.toFixed(1)}%). Focus on this department.`);\n  }\n});\n\nreturn [{ json: reportData }];"
+      },
+      "id": "process-report-data",
+      "name": "Process Report Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "📊 Daily PPE Compliance Report - {{ $json.date }}"
+            },
+            {
+              "name": "blocks",
+              "value": "=[\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"📊 Daily PPE Compliance Report - {{ $json.date }}\"\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"fields\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Total Checks:* {{ $json.summary.total_checks }}\"\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Compliant:* {{ $json.summary.compliant_checks }}\"\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Non-Compliant:* {{ $json.summary.non_compliant_checks }}\"\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Compliance Rate:* {{ $json.summary.compliance_rate.toFixed(1) }}%\"\n      }\n    ]\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*Department Performance:*\"\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"{{ Object.entries($json.departments).map(([dept, data]) => `*${dept}:* ${data.total} checks, ${data.rate.toFixed(1)}% compliance`).join('\\n') }}\"\n    }\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*Recent Violations:*\\n{{ $json.violations.map(v => `• ${v.worker_name} (${v.department}) - ${v.compliance_score.toFixed(1)}%`).join('\\n') }}\"\n    }\n  },\n  {\n    \"type\": \"divider\"\n  },\n  {\n    \"type\": \"section\",\n    \"text\": {\n      \"type\": \"mrkdwn\",\n      \"text\": \"*Recommendations:*\\n{{ $json.recommendations.map(r => `• ${r}`).join('\\n') }}\"\n    }\n  }\n]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-slack-report",
+      "name": "Send Slack Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SENDGRID_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "personalizations",
+              "value": "=[{\n  \"to\": [\n    {\n      \"email\": \"safety-manager@yourcompany.com\"\n    },\n    {\n      \"email\": \"operations-manager@yourcompany.com\"\n    }\n  ],\n  \"subject\": \"Daily PPE Compliance Report - {{ $json.date }}\"\n}]"
+            },
+            {
+              "name": "from",
+              "value": "={\n  \"email\": \"reports@yourcompany.com\",\n  \"name\": \"PPE Compliance System\"\n}"
+            },
+            {
+              "name": "content",
+              "value": "=[{\n  \"type\": \"text/html\",\n  \"value\": \"<h2>Daily PPE Compliance Report - {{ $json.date }}</h2><h3>Summary</h3><ul><li><strong>Total Checks:</strong> {{ $json.summary.total_checks }}</li><li><strong>Compliant:</strong> {{ $json.summary.compliant_checks }}</li><li><strong>Non-Compliant:</strong> {{ $json.summary.non_compliant_checks }}</li><li><strong>Compliance Rate:</strong> {{ $json.summary.compliance_rate.toFixed(1) }}%</li></ul><h3>Department Performance</h3><ul>{{ Object.entries($json.departments).map(([dept, data]) => `<li><strong>${dept}:</strong> ${data.total} checks, ${data.rate.toFixed(1)}% compliance</li>`).join('') }}</ul><h3>Recent Violations</h3><ul>{{ $json.violations.map(v => `<li>${v.worker_name} (${v.department}) - ${v.compliance_score.toFixed(1)}%</li>`).join('') }}</ul><h3>Recommendations</h3><ul>{{ $json.recommendations.map(r => `<li>${r}</li>`).join('') }}</ul>\"\n}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-email-report",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "url": "https://api.airtable.com/v0/YOUR_BASE_ID/Daily_Reports",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_AIRTABLE_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "={\n  \"Date\": \"{{ $json.date }}\",\n  \"Total Checks\": {{ $json.summary.total_checks }},\n  \"Compliant Checks\": {{ $json.summary.compliant_checks }},\n  \"Non-Compliant Checks\": {{ $json.summary.non_compliant_checks }},\n  \"Compliance Rate\": {{ $json.summary.compliance_rate }},\n  \"Department Stats\": \"{{ JSON.stringify($json.departments) }}\",\n  \"Recommendations\": \"{{ $json.recommendations.join('; ') }}\",\n  \"Report Type\": \"Daily\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-report-to-airtable",
+      "name": "Log Report to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 400]
+    }
+  ],
+  "connections": {
+    "Daily Schedule (8 AM)": {
+      "main": [
+        [
+          {
+            "node": "Get Daily Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Recent Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Daily Stats": {
+      "main": [
+        [
+          {
+            "node": "Process Report Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Records": {
+      "main": [
+        [
+          {
+            "node": "Process Report Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Report Data": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Report": {
+      "main": [
+        [
+          {
+            "node": "Log Report to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Report": {
+      "main": [
+        [
+          {
+            "node": "Log Report to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
+
+

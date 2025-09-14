@@ -1,0 +1,306 @@
+{
+  "name": "PPE Compliance Check Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ppe-compliance",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "ppe-compliance-webhook"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/compliance/check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "worker_id",
+              "value": "={{ $json.worker_id }}"
+            },
+            {
+              "name": "worker_name",
+              "value": "={{ $json.worker_name }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ $json.location }}"
+            },
+            {
+              "name": "department",
+              "value": "={{ $json.department }}"
+            },
+            {
+              "name": "shift",
+              "value": "={{ $json.shift }}"
+            },
+            {
+              "name": "image_url",
+              "value": "={{ $json.image_url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "compliance-check",
+      "name": "Compliance Check API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "compliance-check",
+              "leftValue": "={{ $json.data.is_compliant }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "compliance-decision",
+      "name": "Compliance Decision",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "🚨 PPE Non-Compliance Alert"
+            },
+            {
+              "name": "blocks",
+              "value": "=[\n  {\n    \"type\": \"header\",\n    \"text\": {\n      \"type\": \"plain_text\",\n      \"text\": \"🚨 PPE Non-Compliance Alert\"\n    }\n  },\n  {\n    \"type\": \"section\",\n    \"fields\": [\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Worker:* {{ $json.data.worker_name }}\\n*ID:* {{ $json.data.worker_id }}\"\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Department:* {{ $json.data.department }}\\n*Location:* {{ $json.data.location }}\"\n      },\n      {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Compliance Score:* {{ $json.data.compliance_score }}%\\n*Status:* ❌ Non-Compliant\"\n      }\n    ]\n  }\n]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "slack-alert",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.sendgrid.com/v3/mail/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SENDGRID_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "personalizations",
+              "value": "=[{\n  \"to\": [{\n    \"email\": \"safety@yourcompany.com\"\n  }],\n  \"subject\": \"PPE Non-Compliance Alert - {{ $json.data.worker_name }}\"\n}]"
+            },
+            {
+              "name": "from",
+              "value": "={\n  \"email\": \"alerts@yourcompany.com\",\n  \"name\": \"PPE Compliance System\"\n}"
+            },
+            {
+              "name": "content",
+              "value": "=[{\n  \"type\": \"text/html\",\n  \"value\": \"<h2>PPE Non-Compliance Alert</h2><p><strong>Worker:</strong> {{ $json.data.worker_name }} ({{ $json.data.worker_id }})</p><p><strong>Department:</strong> {{ $json.data.department }}</p><p><strong>Location:</strong> {{ $json.data.location }}</p><p><strong>Compliance Score:</strong> {{ $json.data.compliance_score }}%</p><p><strong>Status:</strong> Non-Compliant</p><p>Please take immediate action to ensure worker safety compliance.</p>\"\n}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "email-alert",
+      "name": "Send Email Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.airtable.com/v0/YOUR_BASE_ID/PPE_Compliance",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_AIRTABLE_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "={\n  \"Worker ID\": \"{{ $json.data.worker_id }}\",\n  \"Worker Name\": \"{{ $json.data.worker_name }}\",\n  \"Timestamp\": \"{{ $now }}\",\n  \"Department\": \"{{ $json.data.department }}\",\n  \"Location\": \"{{ $json.data.location }}\",\n  \"Is Compliant\": {{ $json.data.is_compliant }},\n  \"Compliance Score\": {{ $json.data.compliance_score }},\n  \"Helmet Detected\": {{ $json.data.helmet_detected }},\n  \"Mask Detected\": {{ $json.data.mask_detected }},\n  \"Gloves Detected\": {{ $json.data.gloves_detected }},\n  \"Jacket Detected\": {{ $json.data.jacket_detected }}\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-to-airtable",
+      "name": "Log to Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Compliance check completed\",\n  \"data\": {{ $json }}\n}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Compliance Check API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Check API": {
+      "main": [
+        [
+          {
+            "node": "Compliance Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compliance Decision": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Alert": {
+      "main": [
+        [
+          {
+            "node": "Log to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Alert": {
+      "main": [
+        [
+          {
+            "node": "Log to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
+
+
